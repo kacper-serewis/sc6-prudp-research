@@ -9,17 +9,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@types/arc4": "^3.4.0",
     "@types/debug": "^4.1.12",
     "@types/libsodium-wrappers": "^0.7.14",
-    "@types/pako": "^2.0.3",
-    "@types/struct": "^0.0.8",
-    "arc4": "^3.4.0",
-    "binary-parser": "^2.2.1",
     "chalk": "^5.4.0",
     "debug": "^4.4.0",
-    "libsodium-wrappers": "^0.7.13",
-    "pako": "^2.1.0",
-    "struct": "^0.0.12"
+    "libsodium-wrappers": "^0.7.13"
   }
 }
