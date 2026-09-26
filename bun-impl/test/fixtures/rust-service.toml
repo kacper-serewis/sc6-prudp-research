@@ -1,0 +1,119 @@
+services = [
+    "onlineconfig",
+    "sc_bl_secure",
+    "content",
+    "sc_bl_auth",
+]
+api_server = "0.0.0.0:50051"
+
+[service.onlineconfig]
+type = "config"
+listen = "0.0.0.0:80"
+
+[[service.onlineconfig.content]]
+Name = "SandboxUrl"
+Values = ["prudp:/address=127.0.0.1;port=21126"]
+
+[[service.onlineconfig.content]]
+Name = "SandboxUrlWS"
+Values = ["127.0.0.1:21126"]
+
+[service.sc_bl_auth]
+type = "authentication"
+access_key = "yl4NG7qZ"
+crypto_key = "CD&ML"
+listen = "0.0.0.0:21126"
+vport = 1
+secure_server_addr = "127.0.0.1:21127"
+ticket_key = [
+    141,
+    157,
+    23,
+    73,
+    207,
+    130,
+    81,
+    28,
+    249,
+    152,
+    43,
+    250,
+    117,
+    152,
+    41,
+    111,
+    185,
+    26,
+    159,
+    145,
+    90,
+    170,
+    43,
+    39,
+    217,
+    235,
+    227,
+    191,
+    146,
+    224,
+    237,
+    243,
+]
+
+[service.sc_bl_auth.settings]
+
+[service.sc_bl_secure]
+type = "secure"
+access_key = "yl4NG7qZ"
+crypto_key = "CD&ML"
+listen = "0.0.0.0:21127"
+vport = 1
+ticket_key = [
+    141,
+    157,
+    23,
+    73,
+    207,
+    130,
+    81,
+    28,
+    249,
+    152,
+    43,
+    250,
+    117,
+    152,
+    41,
+    111,
+    185,
+    26,
+    159,
+    145,
+    90,
+    170,
+    43,
+    39,
+    217,
+    235,
+    227,
+    191,
+    146,
+    224,
+    237,
+    243,
+]
+
+[service.sc_bl_secure.settings]
+storage_host = "127.0.0.1:8000"
+storage_path = "/mp_balancing.ini"
+
+[service.content]
+type = "content"
+listen = "0.0.0.0:8000"
+
+[service.content.files]
+"/mp_balancing.ini" = "./data/mp_balancing.ini"
+
+[debug]
+mark_all_as_online = false
+force_joins = false
