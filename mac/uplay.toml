@@ -1,0 +1,25 @@
+# Config for the 5th-echelon uplay_r1_loader.dll shim.
+# setup.sh copies this to <game>/src/SYSTEM/uplay.toml (only if it doesn't exist yet).
+# Full schema: https://github.com/unixoide/5th-echelon/blob/main/hooks/hooks-config/src/lib.rs
+
+# Host the game asks for GET /OnlineConfigService.svc/GetOnlineConfig (HTTP, port 80).
+# The shim patches this over onlineconfigservice.ubi.com in the exe's memory.
+ConfigServer = "127.0.0.1"
+# 5th-echelon's own gRPC API (friends/invites). We don't run it; a failed login is ignored.
+ApiServer = "http://127.0.0.1:50051"
+# The in-game overlay hooks D3D and isn't needed for research.
+EnableOverlay = false
+# Extra logging written to bl-tracing.log next to the exe.
+EnableHooks = ["RMCMessages", "NetResultCore", "NetResultRdvSession", "ChangeState"]
+
+[User]
+# Returned to the game by UPLAY_USER_GetUsername etc.; this is what the auth server sees.
+Username = "sam_the_fisher"
+Password = "password1234"
+# Must be non-empty, otherwise the shim forwards UPLAY_Startup to the real loader,
+# which requires Ubisoft Connect to be installed and running.
+CdKeys = ["ABCD-EFGH-IJKL-MNOP"]
+
+[Logging]
+# TRACE, DEBUG, INFO, WARNING or ERROR (uppercase only)
+Level = "DEBUG"
