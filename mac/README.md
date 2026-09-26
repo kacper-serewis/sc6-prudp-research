@@ -20,7 +20,30 @@ mac/setup.sh <steam_username>   # one-time; asks for your Steam password and Ste
 mac/launch.sh                   # DX11 exe (use `mac/launch.sh dx9` for the DX9 exe)
 ```
 
-You can also open `~/Applications/Splinter Cell Blacklist.app` from Finder.
+Use `mac/launch.sh` for online play. Opening the wrapper directly from Finder does not
+apply the in-memory compatibility fixes described below.
+
+Windowed clients launched with this script are placed side by side, starting at `(20, 50)`
+with a 20-point gap. This uses macOS Accessibility and Swift (from the command-line tools).
+Set `SC6_WINDOW_LAYOUT=off` to keep Wine's window placement. A second installed app can be
+launched with `SC6_APP="$HOME/Applications/Splinter Cell Blacklist 2.app" mac/launch.sh`;
+give its `uplay.toml` a different account. The placement helper waits in the background for
+the new window, for up to 60 seconds.
+
+From the repository root, the Makefile provides shortcuts for the installed apps:
+
+```sh
+make server      # leave running in one terminal (bun install in bun-impl first)
+make instances   # in another terminal: launch both clients concurrently
+make instance-1  # or launch only sam_the_fisher's app
+make instance-2  # or launch only archie's app
+```
+
+Each client uses the account configured in its own `uplay.toml`. The targets expect both app
+bundles to be installed already; they do not copy apps or create accounts. Override paths with
+`make instances INSTANCE_1_APP="/path/Client 1.app" INSTANCE_2_APP="/path/Client 2.app"`.
+`RENDERER=dx9` selects DX9; DX11 remains the tested default. The launcher compatibility and
+window-layout environment variables also work with these targets. Run `make help` for the list.
 
 You need about 25 GB free: the game is about 20 GB, and the wrapper plus downloads take a few more.
 
@@ -34,8 +57,9 @@ Paths can be overridden with `SC6_APP` (the wrapper app, default
 | --- | --- |
 | `setup.sh` | Idempotent installer. Re-run it any time; finished steps are skipped. |
 | `download.sh` | Downloads or verifies the game with steamcmd (`+@sSteamCmdForcePlatformType windows`). |
-| `launch.sh` | Starts the game under `winedbg`, which applies the CPUID fix in memory and detaches. |
-| `patch-cpuid.py` | Generates the `winedbg` commands for the CPUID fix (see below). |
+| `launch.sh` | Starts the game under `winedbg`, applies the CPUID and NLA fixes in memory, and detaches. |
+| `patch-cpuid.py` | Generates `winedbg` commands for CPUID and, with `--nla`, network availability. |
+| `arrange-windows.swift` | Places the running Blacklist client windows side by side. |
 | `env.sh` | `source` it to run Wine commands against the game's prefix (`wine regedit`, `wine winecfg`, ...). |
 | `uplay.toml` | Config template for the 5th-echelon shim. It's copied next to the exe. |
 
@@ -100,13 +124,31 @@ The exe file can't be patched, because the shim hashes it on startup and refuses
 the game under `winedbg`. At the initial breakpoint, `winedbg` rewrites each of the 12 checks from
 `and edx, 8` to `or edx, 8`, then detaches.
 
-## Known issue: logged out right after login
+## Wine NLA: logged out right after login
 
-With the CPUID fix applied, the game logs in (`LoginEx`, `RegisterEx`, `fetch_config`,
-`SetLocaleCode`) and then logs out about 10 ms later with "The Splinter Cell Blacklist service is not
-available". The game posts `PlatformServiceConnectionLost` (the Uplay side) from `0x898547`, because
-a flag at `0x32c10b0 + 0x448` is still set. The flag starts as `true` in its constructor, and nothing
-clears it on this setup. It isn't known yet what's supposed to clear it.
+The game's `NLAT` thread queries Windows Network Location Awareness through
+`WSALookupServiceBeginA` with namespace 15 (`NS_NLA`). On this Wine engine the call returns
+`SOCKET_ERROR` (-1), so the thread reports no network at `NLAT + 0x9c`. The game successfully
+authenticates, then posts `PlatformServiceConnectionLost` from `0x89847a` (DX11) and logs out
+with "The Splinter Cell Blacklist service is not available".
+
+`launch.sh` now enables an in-memory workaround: the NLA refresh routine reports network and
+internet availability, leaving actual PRUDP authentication and transport errors to the game.
+The routine is at `0x77b7c0` in DX11 and `0xa199d0` in DX9; the script locates it by a unique
+byte sequence and validates its prologue before emitting any writes. DX11 was verified live:
+the client stays in the online party screen and reaches `CreateSession` / `AddParticipants`.
+DX9's binary signature is checked, but its online flow has not been tested.
+Use `SC6_NLA_WORKAROUND=0 mac/launch.sh` to restore the original probe for debugging.
+This workaround assumes a network is available; it does not implement Windows NLA notifications.
+
+The earlier investigation incorrectly attributed the logout to `0x32c14f8`. That byte is
+initialized to zero by the constructor at `0x871ad0` (whose `this` starts at `0x32c10b4`),
+and is set when the command line contains `offline`. It was zero during the reproduced logout.
+The decisive state was `*(uint32_t*)(*(uint32_t*)0x338d5f8 + 0x9c) == 0`.
+
+Two DX11 clients (`sam_the_fisher` and `archie`) were subsequently verified in the same live
+SvM Training Grounds match on Cartel, via Quick Match. They used local game ports 13000 and
+13001. The overlay remained disabled; matchmaking joined the clients without an overlay invite.
 
 ## Logs and debugging
 

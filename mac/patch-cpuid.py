@@ -14,8 +14,12 @@ The exe file itself can't be patched: the 5th-echelon shim hashes it on startup 
 refuses to run a modified binary. So launch.sh starts the game under winedbg, which
 applies these writes at the initial breakpoint and detaches.
 
-Usage: patch-cpuid.py <exe>   (prints the winedbg script to stdout)
+With --nla, also bypass the game's Windows NLA availability probe, which fails
+under Sikarugir Wine even when the game can reach the server.
+
+Usage: patch-cpuid.py [--nla] <exe>   (prints the winedbg script to stdout)
 """
+import argparse
 import struct
 import sys
 from pathlib import Path
@@ -23,6 +27,24 @@ from pathlib import Path
 CHECK = bytes.fromhex("b8 01000000 0fa2 83e2 08")
 OPERAND = 8  # offset of the e2 (ModRM: and edx) byte inside CHECK
 OR_EDX = 0xCA  # ModRM for `or edx, imm8`
+
+# NLAT refresh stores network/internet availability at this+0x9c / this+0xa0.
+# Both shipped DX9/DX11 executables have this unique epilogue and prologue,
+# separated by 0x11f bytes. Validate both before emitting any debugger writes.
+NLA_STORES = bytes.fromhex("89 b7 9c000000 89 97 a0000000")
+NLA_PROLOGUE = bytes.fromhex("55 8b ec b8 50000100")
+NLA_STORES_OFFSET = 0x11F
+# mov eax,1; mov [ecx+9c],eax; mov [ecx+a0],eax; ret
+NLA_REPLACEMENT = bytes.fromhex("b8 01000000 89 81 9c000000 89 81 a0000000 c3")
+
+
+def nla_offset(data: bytes) -> int:
+    if data.count(NLA_STORES) != 1:
+        raise ValueError("expected exactly one NLA availability probe")
+    offset = data.index(NLA_STORES) - NLA_STORES_OFFSET
+    if offset < 0 or data[offset:offset + len(NLA_PROLOGUE)] != NLA_PROLOGUE:
+        raise ValueError("unrecognized NLA availability probe prologue")
+    return offset
 
 
 def file_offset_to_va(data: bytes):
@@ -44,7 +66,7 @@ def file_offset_to_va(data: bytes):
     return convert
 
 
-def main(exe: Path) -> None:
+def main(exe: Path, nla: bool = False) -> None:
     data = exe.read_bytes()
     to_va = file_offset_to_va(data)
     offsets = []
@@ -54,14 +76,24 @@ def main(exe: Path) -> None:
         start = data.find(CHECK, start + 1)
     if not offsets:
         sys.exit(f"{exe.name}: no CMPXCHG8B checks found")
-    for offset in offsets:
-        print(f"set *(unsigned char*){to_va(offset + OPERAND):#x} = {OR_EDX:#x}")
+    # Resolve and validate all writes before printing commands. A failed match
+    # must not leave a partially patched game running.
+    writes = [(to_va(offset + OPERAND), OR_EDX) for offset in offsets]
+    if nla:
+        start = nla_offset(data)
+        writes.extend((to_va(start + i), byte) for i, byte in enumerate(NLA_REPLACEMENT))
+    for address, byte in writes:
+        print(f"set *(unsigned char*){address:#x} = {byte:#x}")
     print("detach")
     print("quit")
     print(f"{exe.name}: {len(offsets)} CMPXCHG8B checks", file=sys.stderr)
+    if nla:
+        print(f"{exe.name}: Wine NLA workaround at {to_va(start):#x}", file=sys.stderr)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit(__doc__)
-    main(Path(sys.argv[1]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--nla", action="store_true", help="bypass Wine's failing NLA availability probe")
+    parser.add_argument("exe", type=Path)
+    args = parser.parse_args()
+    main(args.exe, args.nla)
