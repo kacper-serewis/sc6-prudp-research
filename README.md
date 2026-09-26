@@ -1,6 +1,12 @@
 # sc6-prudp-research
 
-## Running the game on macOS
+Research into the Quazal PRUDP/RMC protocol of *Splinter Cell: Blacklist*.
 
-See [mac/README.md](mac/README.md) for installing Splinter Cell: Blacklist on an Apple Silicon Mac
-(Wine + DXMT, without Ubisoft Connect) so the client can be pointed at these servers.
+The TypeScript server in `bun-impl/` is based on the [5th-echelon](https://github.com/unixoide/5th-echelon)
+repository: it is a port of its Rust dedicated server.
+
+- `bun-impl/`: a working TypeScript (Bun) server, a port of [5th-echelon](https://github.com/unixoide/5th-echelon). See [bun-impl/README.md](bun-impl/README.md).
+- `node-impl/`, `models/`, `*.py`: earlier experiments
+- `wireshark-dumps/`, `payloads.json`, `unique-payloads/`: captured traffic
+- `mitm-frida/`: Frida scripts to capture the game's traffic
+- `mac/`: scripts to run the game on an Apple Silicon Mac (Wine + DXMT, no Ubisoft Connect) against this server. See [mac/README.md](mac/README.md).

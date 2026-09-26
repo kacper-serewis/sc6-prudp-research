@@ -1,7 +1,7 @@
 # Running Splinter Cell: Blacklist on an Apple Silicon Mac
 
 These scripts install the Steam (Windows) version of SC:BL on macOS, so the game client can be
-pointed at the servers in this repo. They were tested on an M5 Pro running macOS 27.2 in September 2026.
+pointed at the server in `bun-impl/`. They were tested on an M5 Pro running macOS 27.2 in September 2026.
 
 Everything runs on a free stack:
 
@@ -53,22 +53,36 @@ Paths can be overridden with `SC6_APP` (the wrapper app, default
 7. Installs the shim. It renames the original `uplay_r1_loader.dll` to
    `uplay_r1_loader.orig.dll`, drops in 5th-echelon's DLL, and copies `uplay.toml`.
 
-## How the game reaches our server
+## Testing against the server
 
-1. `UPLAY_Startup` is handled by the shim. `CdKeys` in `uplay.toml` must be non-empty, or the call
-   is forwarded to the real loader. That loader shows "Ubisoft Game Launcher was not found".
+`bun-impl` serves everything the shim's default `uplay.toml` points at, so no extra config is needed:
+
+```sh
+cd bun-impl && bun install && bun run start   # onlineconfig :80, auth :21126, secure :21127, API :50051
+mac/launch.sh                                  # in another terminal, then pick online mode in the game
+```
+
+The game logs in as `sam_the_fisher` / `password1234` (from `[User]` in `uplay.toml`). The server's
+database seeds that account.
+
+## How the game reaches the server
+
+1. The shim handles `UPLAY_Startup`. `CdKeys` in `uplay.toml` must be non-empty, or the call is
+   forwarded to the real loader. That loader shows "Ubisoft Game Launcher was not found".
 2. The shim overwrites the `onlineconfigservice.ubi.com` hostname in the exe with `ConfigServer`,
    which defaults to `127.0.0.1`.
 3. The game sends
    `GET /OnlineConfigService.svc/GetOnlineConfig?onlineConfigID=967fad701a3648d8bf099f07207f4a73&target=client`
    over HTTP on port 80. The response is a JSON list of `{Name, Values}`. The entry that matters is
    `SandboxUrl`, which the retail service set to
-   `prudp:/address=lb-rdv-as-prod01.ubisoft.com;port=21126`. Point it at the PRUDP authentication
-   server instead, for example `prudp:/address=127.0.0.1;port=21170` for `bun-impl`.
-4. The game then connects to that address over PRUDP. It sends SYN, then CONNECT, then
-   `TicketGranting.LoginEx`, and the username comes from `[User]` in `uplay.toml`.
+   `prudp:/address=lb-rdv-as-prod01.ubisoft.com;port=21126`. `bun-impl` answers with
+   `prudp:/address=127.0.0.1;port=21126`, or with the `--public-ip` address.
+4. The game connects there over PRUDP: SYN, then CONNECT, then `TicketGranting.LoginEx`. After
+   login it moves to the secure server that the ticket names.
+5. The shim also logs in to the gRPC API (`ApiServer`) for friends and invites. If that fails,
+   it's ignored.
 
-A full recorded response is in 5th-echelon's
+A full recorded retail response is in 5th-echelon's
 [research notes](https://github.com/unixoide/5th-echelon/blob/main/docs/research/splinter_cell_blacklist.md).
 
 ## Logs and debugging

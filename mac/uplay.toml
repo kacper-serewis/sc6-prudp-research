@@ -5,7 +5,7 @@
 # Host the game asks for GET /OnlineConfigService.svc/GetOnlineConfig (HTTP, port 80).
 # The shim patches this over onlineconfigservice.ubi.com in the exe's memory.
 ConfigServer = "127.0.0.1"
-# 5th-echelon's own gRPC API (friends/invites). We don't run it; a failed login is ignored.
+# gRPC API for friends/invites (bun-impl serves it on :50051). A failed login is ignored.
 ApiServer = "http://127.0.0.1:50051"
 # The in-game overlay hooks D3D and isn't needed for research.
 EnableOverlay = false
