@@ -77,8 +77,8 @@ database seeds that account.
    `SandboxUrl`, which the retail service set to
    `prudp:/address=lb-rdv-as-prod01.ubisoft.com;port=21126`. `bun-impl` answers with
    `prudp:/address=127.0.0.1;port=21126`, or with the `--public-ip` address.
-4. The game connects there over PRUDP: SYN, then CONNECT, then `TicketGranting.LoginEx`. After
-   login it moves to the secure server that the ticket names.
+4. The game connects there over PRUDP: SYN, then CONNECT, then `TicketGranting.LoginEx`. The
+   `LoginEx` response names the secure server, and the game connects to it next.
 5. The shim also logs in to the gRPC API (`ApiServer`) for friends and invites. If that fails,
    it's ignored.
 
