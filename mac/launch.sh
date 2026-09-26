@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launches Splinter Cell: Blacklist under Wine with DXMT.
+# Launches Splinter Cell: Blacklist under Wine with DXMT, with the Rosetta CPUID fix (see patch-cpuid.py).
 #
 # Usage: mac/launch.sh [dx11|dx9] [game args...]
 #
@@ -11,7 +11,8 @@
 #
 # The 5th-echelon shim logs to $GAME_SYSTEM_DIR/bl-tracing.log.
 set -euo pipefail
-source "$(cd "$(dirname "$0")" && pwd)/env.sh"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+source "$script_dir/env.sh"
 
 exe=Blacklist_DX11_game.exe
 case "${1:-}" in
@@ -20,4 +21,7 @@ case "${1:-}" in
 esac
 
 cd "$GAME_SYSTEM_DIR"
-exec wine "$exe" "$@"
+# Start the game under winedbg, which fixes the CMPXCHG8B check in memory at the initial
+# breakpoint and detaches (see patch-cpuid.py). Then wait for the game to exit.
+python3 "$script_dir/patch-cpuid.py" "$exe" | wine winedbg "C:\\Games\\Blacklist\\src\\SYSTEM\\$exe" "$@" >/dev/null
+wineserver -w

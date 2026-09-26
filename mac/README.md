@@ -34,7 +34,8 @@ Paths can be overridden with `SC6_APP` (the wrapper app, default
 | --- | --- |
 | `setup.sh` | Idempotent installer. Re-run it any time; finished steps are skipped. |
 | `download.sh` | Downloads or verifies the game with steamcmd (`+@sSteamCmdForcePlatformType windows`). |
-| `launch.sh` | Starts the game. |
+| `launch.sh` | Starts the game under `winedbg`, which applies the CPUID fix in memory and detaches. |
+| `patch-cpuid.py` | Generates the `winedbg` commands for the CPUID fix (see below). |
 | `env.sh` | `source` it to run Wine commands against the game's prefix (`wine regedit`, `wine winecfg`, ...). |
 | `uplay.toml` | Config template for the 5th-echelon shim. It's copied next to the exe. |
 
@@ -84,6 +85,28 @@ database seeds that account.
 
 A full recorded retail response is in 5th-echelon's
 [research notes](https://github.com/unixoide/5th-echelon/blob/main/docs/research/splinter_cell_blacklist.md).
+
+## Rosetta 2 and the CMPXCHG8B check
+
+The game's atomics library asserts `Private::IsCmpXchg8bSupported()`
+(`gear/thread/atomic/win32/atomic.h`, line 340) before it uses 64-bit atomics. The check runs
+`cpuid` leaf 1 and tests `EDX & 0x8`, which is the PSE bit, not the CX8 bit (`0x100`). Real x86 CPUs
+always report PSE. Rosetta 2 reports CX8 but not PSE (leaf 1 `EDX = 0f8b8b15`), so the assert hits an
+`int3` and the game crashes right after it logs in online, when NAT detection starts. Offline play
+never reaches this code.
+
+The exe file can't be patched, because the shim hashes it on startup and refuses a modified binary
+("blacklist_dx11_game.exe was modified or the version is not supported"). Instead, `launch.sh` starts
+the game under `winedbg`. At the initial breakpoint, `winedbg` rewrites each of the 12 checks from
+`and edx, 8` to `or edx, 8`, then detaches.
+
+## Known issue: logged out right after login
+
+With the CPUID fix applied, the game logs in (`LoginEx`, `RegisterEx`, `fetch_config`,
+`SetLocaleCode`) and then logs out about 10 ms later with "The Splinter Cell Blacklist service is not
+available". The game posts `PlatformServiceConnectionLost` (the Uplay side) from `0x898547`, because
+a flag at `0x32c10b0 + 0x448` is still set. The flag starts as `true` in its constructor, and nothing
+clears it on this setup. It isn't known yet what's supposed to clear it.
 
 ## Logs and debugging
 
