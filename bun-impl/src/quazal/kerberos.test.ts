@@ -19,6 +19,16 @@ describe("kerberos", () => {
     expect(deriveKey(1002, "JaDe!").equals(deriveKey(1002))).toBe(false);
   });
 
+  test("caches derived keys", () => {
+    const first = deriveKey(5000);
+    const start = performance.now();
+    const second = deriveKey(5000 + 1024); // same iteration count
+    expect(performance.now() - start).toBeLessThan(5);
+    expect(second).toEqual(first);
+    second[0] ^= 0xff; // callers get copies
+    expect(deriveKey(5000)).toEqual(first);
+  });
+
   test("seals and opens internal tickets", () => {
     const sealed = sealTicketInternal(internal, ticketKey);
     expect(sealed.length).toBe(24 + 16 + 28);

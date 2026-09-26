@@ -42,6 +42,12 @@ export const PacketFlag = {
   HasSize: 8,
 } as const;
 
+/**
+ * Upper bound for a decompressed payload. Payloads are split into ~1000 byte fragments before
+ * compression, so this only rejects decompression bombs.
+ */
+export const MAX_DECOMPRESSED_SIZE = 64 * 1024;
+
 export class PacketError extends Error {
   override name = "PacketError";
 }
@@ -151,7 +157,7 @@ export class QPacket {
       packet.useCompression = payload.length > 0 && payload[0] !== 0;
       if (packet.useCompression) {
         try {
-          payload = inflateSync(payload.subarray(1));
+          payload = inflateSync(payload.subarray(1), { maxOutputLength: MAX_DECOMPRESSED_SIZE });
         } catch (e) {
           throw new PacketError(`Decompression failed ${(e as Error).message}`);
         }

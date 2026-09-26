@@ -7,7 +7,7 @@
  * packets are sent once and client ACKs are ignored.
  */
 import { randomInt } from "node:crypto";
-import type { Logger } from "../../logger";
+import { hexPreview, type Logger } from "../../logger";
 import { ClientInfo } from "../client-info";
 import { buffer, decode, encode, struct, u32 } from "../codec";
 import { formatSocketAddress, type Context, type SocketAddress } from "../context";
@@ -17,6 +17,8 @@ import { ReadStream } from "../stream";
 import { formatVPort, PacketFlag, PacketType, QPacket, vportToByte, type VPort } from "./packet";
 
 export const MAX_PAYLOAD_SIZE = 1000;
+/** Upper bound for the buffered fragments of one message (the game's largest calls are ~12 KB). */
+export const MAX_REASSEMBLED_SIZE = 1024 * 1024;
 export const SESSION_TIMEOUT_MS = 60_000;
 const FIRST_CONNECTION_ID = 0x3aaa_aaaa;
 
@@ -29,8 +31,8 @@ export interface StreamCall {
 }
 
 export interface StreamHandler {
-  /** Returns the response payload. Throwing means that no response is sent. */
-  handle(call: StreamCall, data: Buffer): Buffer;
+  /** Returns the response payload. Throwing (or rejecting) means that no response is sent. */
+  handle(call: StreamCall, data: Buffer): Buffer | Promise<Buffer>;
 }
 
 export interface Transport {
@@ -119,7 +121,7 @@ export class PrudpServer {
       }
       const raw = data.subarray(offset, offset + size);
       offset += size;
-      logger.trace(`-> ${raw.toString("hex")}`);
+      logger.trace(`-> ${hexPreview(raw)}`);
 
       try {
         packet.validate(this.ctx, raw);
@@ -259,6 +261,15 @@ export class PrudpServer {
     let payload = packet.payload;
     if (packet.fragmentId !== undefined) {
       if (packet.fragmentId !== 0) {
+        let buffered = packet.payload.length;
+        for (const [fid, fragment] of client.packetFragments) {
+          buffered += fid === packet.fragmentId ? 0 : fragment.length;
+        }
+        if (buffered > MAX_REASSEMBLED_SIZE) {
+          logger.error(`fragmented message exceeds ${MAX_REASSEMBLED_SIZE} bytes, dropping it`);
+          client.packetFragments.clear();
+          return;
+        }
         logger.info(`Caching fragment ${packet.fragmentId}`);
         client.packetFragments.set(packet.fragmentId, packet.payload);
         return;
@@ -285,14 +296,24 @@ export class PrudpServer {
       logger.error("No handler found");
       return;
     }
-    let response: Buffer;
+    let response: Buffer | Promise<Buffer>;
     try {
       response = handler.handle({ logger, ctx: this.ctx, client, server: this }, payload);
     } catch (e) {
       logger.error("Handler failed", { error: e });
       return;
     }
+    if (response instanceof Promise) {
+      response
+        .then((data) => this.sendMessage(logger, from, packet, client, data))
+        .catch((e) => logger.error("Handler failed", { error: e }));
+    } else {
+      this.sendMessage(logger, from, packet, client, response);
+    }
+  }
 
+  /** Sends a response message, split into DATA fragments. */
+  private sendMessage(logger: Logger, from: SocketAddress, request: QPacket, client: ClientInfo, response: Buffer) {
     // Fragments are numbered down to 0, which marks the last one.
     const count = Math.ceil(response.length / MAX_PAYLOAD_SIZE);
     for (let i = 0; i < count; i++) {
@@ -301,8 +322,8 @@ export class PrudpServer {
         logger,
         from,
         new QPacket({
-          source: packet.destination,
-          destination: packet.source,
+          source: request.destination,
+          destination: request.source,
           packetType: PacketType.Data,
           payload: chunk,
           fragmentId: count - 1 - i,
@@ -361,7 +382,7 @@ export class PrudpServer {
     packet.flags |= PacketFlag.HasSize;
     logger.trace(`<- ${packet}`);
     const data = packet.toBytes(this.ctx);
-    logger.trace(`<- ${data.toString("hex")}`);
+    logger.trace(`<- ${hexPreview(data)}`);
     this.sendRaw(data, to);
   }
 

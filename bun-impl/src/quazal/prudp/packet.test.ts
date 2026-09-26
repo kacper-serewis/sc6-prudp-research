@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadRustSession } from "../../../test/fixtures/rust-session";
 import { splinterCellBlacklistContext } from "../context";
-import { calcChecksum, PacketFlag, PacketType, QPacket, StreamType } from "./packet";
+import { calcChecksum, MAX_DECOMPRESSED_SIZE, PacketFlag, PacketType, QPacket, StreamType } from "./packet";
 
 const ctx = splinterCellBlacklistContext();
 
@@ -105,6 +105,21 @@ describe("QPacket", () => {
     parsed.validate(ctx, bytes);
     expect(parsed.useCompression).toBe(true);
     expect(parsed.payload.equals(payload)).toBe(true);
+  });
+
+  test("rejects payloads that inflate beyond MAX_DECOMPRESSED_SIZE", () => {
+    const packet = (size: number) =>
+      new QPacket({
+        source: { port: 15, streamType: StreamType.RVSec },
+        destination: { port: 1, streamType: StreamType.RVSec },
+        packetType: PacketType.Data,
+        flags: PacketFlag.HasSize,
+        fragmentId: 0,
+        payload: Buffer.alloc(size),
+        useCompression: true,
+      }).toBytes(ctx);
+    expect(QPacket.fromBytes(ctx, packet(MAX_DECOMPRESSED_SIZE)).packet.payload.length).toBe(MAX_DECOMPRESSED_SIZE);
+    expect(() => QPacket.fromBytes(ctx, packet(4 * 1024 * 1024))).toThrow("Decompression failed");
   });
 
   test("checksum folds words and trailing bytes", () => {

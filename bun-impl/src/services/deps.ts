@@ -21,3 +21,13 @@ export function storageCall<T>(call: StreamCall, message: string, fn: () => T): 
     throw new RmcError(RmcErrorKind.InternalError, message);
   }
 }
+
+/** `storageCall` for asynchronous operations. */
+export async function storageCallAsync<T>(call: StreamCall, message: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    call.logger.error(message, { error: e });
+    throw new RmcError(RmcErrorKind.InternalError, message);
+  }
+}

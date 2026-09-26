@@ -80,7 +80,8 @@ export class Storage {
     this.db.close();
   }
 
-  loginUser(username: string, password: string): LoginResult {
+  /** Looks up the stored password or hash of a user (exactly one of them is set). */
+  private findCredentials(username: string) {
     const row = this.db
       .query<{ id: number; password: string | null; password_hash: string | null }, [string]>(
         "SELECT id, password, password_hash FROM users WHERE username = ?",
@@ -88,32 +89,59 @@ export class Storage {
       .get(username);
     if (!row) {
       this.logger.warn(`User ${username} not found`);
-      return { ok: false, error: "NotFound" };
+      return undefined;
     }
-    let valid: boolean;
     if (row.password !== null && row.password_hash !== null) {
       throw new Error(`password and password_hash set for user ${row.id}`);
-    } else if (row.password !== null) {
-      this.logger.info(`Verify plain password of ${username}`);
-      valid = row.password === password;
-    } else if (row.password_hash !== null) {
-      this.logger.info(`Verify password hash of ${username}`);
-      valid = Bun.password.verifySync(password, row.password_hash);
-    } else {
+    }
+    if (row.password === null && row.password_hash === null) {
       throw new Error(`neither password or password_hash set for user ${row.id}`);
     }
+    this.logger.info(`Verify ${row.password !== null ? "plain password" : "password hash"} of ${username}`);
+    return row as { id: number } & ({ password: string; password_hash: null } | { password: null; password_hash: string });
+  }
+
+  private finishLogin(userId: number, valid: boolean): LoginResult {
     if (!valid) {
       return { ok: false, error: "InvalidPassword" };
     }
     // Users only show up as online once the game creates a session (see `createUserSession`),
     // logging in through the API alone doesn't count. That's also how the Rust server behaves.
-    this.db.run("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [row.id]);
-    return { ok: true, userId: row.id };
+    this.db.run("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?", [userId]);
+    return { ok: true, userId };
+  }
+
+  /** Verifies the password synchronously; request handlers should use `loginUserAsync`. */
+  loginUser(username: string, password: string): LoginResult {
+    const row = this.findCredentials(username);
+    if (!row) {
+      return { ok: false, error: "NotFound" };
+    }
+    const valid = row.password !== null ? row.password === password : Bun.password.verifySync(password, row.password_hash);
+    return this.finishLogin(row.id, valid);
+  }
+
+  /** Like `loginUser`, but verifies password hashes on Bun's worker threads instead of blocking. */
+  async loginUserAsync(username: string, password: string): Promise<LoginResult> {
+    const row = this.findCredentials(username);
+    if (!row) {
+      return { ok: false, error: "NotFound" };
+    }
+    const valid = row.password !== null ? row.password === password : await Bun.password.verify(password, row.password_hash);
+    return this.finishLogin(row.id, valid);
   }
 
   registerUser(username: string, password: string, ubiId?: string | null) {
-    const hash = Bun.password.hashSync(password, ARGON2);
-    this.db.run("INSERT INTO users (username, password_hash, ubi_id) VALUES (?, ?, ?)", [username, hash, ubiId ?? null]);
+    this.insertUser(username, Bun.password.hashSync(password, ARGON2), ubiId);
+  }
+
+  /** Like `registerUser`, but hashes the password on Bun's worker threads instead of blocking. */
+  async registerUserAsync(username: string, password: string, ubiId?: string | null) {
+    this.insertUser(username, await Bun.password.hash(password, ARGON2), ubiId);
+  }
+
+  private insertUser(username: string, passwordHash: string, ubiId?: string | null) {
+    this.db.run("INSERT INTO users (username, password_hash, ubi_id) VALUES (?, ?, ?)", [username, passwordHash, ubiId ?? null]);
   }
 
   /** The plaintext password of legacy accounts (used to encrypt their tickets), if there is one. */

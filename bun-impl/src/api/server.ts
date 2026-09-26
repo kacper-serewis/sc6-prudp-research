@@ -190,9 +190,9 @@ export async function startApiServer({
   ];
 
   server.addService(services.users, {
-    Login: unary("Users.Login", (call) => {
+    Login: unary("Users.Login", async (call) => {
       const { username, password } = call.request;
-      const result = storage.loginUser(username, password);
+      const result = await storage.loginUserAsync(username, password);
       if (!result.ok) {
         throw result.error === "InvalidPassword"
           ? new ApiError(grpc.status.UNAUTHENTICATED, "Invalid login")
@@ -207,10 +207,10 @@ export async function startApiServer({
         user: null,
       };
     }),
-    Register: unary("Users.Register", (call) => {
+    Register: unary("Users.Register", async (call) => {
       const { username, password, ubi_id } = call.request;
       try {
-        storage.registerUser(username, password, ubi_id);
+        await storage.registerUserAsync(username, password, ubi_id);
       } catch (e) {
         if (isUniqueViolation(e)) {
           throw new ApiError(grpc.status.ALREADY_EXISTS, "Username already taken or Ubisoft ID already registered");

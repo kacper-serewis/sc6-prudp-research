@@ -11,7 +11,7 @@ import type { StreamCall } from "../quazal/prudp/server";
 import { RmcError, RmcErrorKind } from "../quazal/rmc/error";
 import { decodeParameters, implementProtocol } from "../quazal/rmc/protocol";
 import { QRESULT_OK, StationURL } from "../quazal/types";
-import { SERVER_PID, storageCall, type ServiceDeps } from "./deps";
+import { SERVER_PID, storageCall, storageCallAsync, type ServiceDeps } from "./deps";
 
 const VALID_FOREVER = 0xffff_ffff_ffff_ffffn;
 
@@ -75,7 +75,7 @@ export function ticketGrantingProtocol({ storage }: ServiceDeps) {
       };
     },
 
-    loginEx(request, call) {
+    async loginEx(request, call) {
       const { typeName, data } = request.oExtraData;
       if (typeName !== "UbiAuthenticationLoginCustomData") {
         call.logger.error(`Unexpected login data ${typeName}`);
@@ -84,7 +84,8 @@ export function ticketGrantingProtocol({ storage }: ServiceDeps) {
       const { userName, password } = decodeParameters(UbiAuthenticationLoginCustomData, data);
       call.logger.info(`LoginEx attempt by ${userName} (${request.strUserName})`);
 
-      const result = storageCall(call, "Error logging in", () => storage.loginUser(userName, password));
+      // Argon2 verification runs on a worker thread, so other clients aren't blocked meanwhile.
+      const result = await storageCallAsync(call, "Error logging in", () => storage.loginUserAsync(userName, password));
       if (!result.ok) {
         call.logger.warn(`login failed for ${userName}`);
         throw new RmcError(RmcErrorKind.AccessDenied);

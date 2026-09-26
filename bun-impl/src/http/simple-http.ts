@@ -7,7 +7,10 @@ import { createServer, type Server, type Socket } from "node:net";
 import type { Logger } from "../logger";
 import { formatSocketAddress, type SocketAddress } from "../quazal/context";
 
-const IDLE_TIMEOUT_MS = 10_000;
+/** Connections are closed after this time, whether they are active or not. */
+const REQUEST_TIMEOUT_MS = 10_000;
+/** Longer request lines are not waited for (the Rust server doesn't limit them). */
+const MAX_REQUEST_LINE = 8 * 1024;
 
 function listen(logger: Logger, address: SocketAddress, onRequestLine: (line: string, socket: Socket) => void) {
   const server = createServer((socket) => {
@@ -19,12 +22,18 @@ function listen(logger: Logger, address: SocketAddress, onRequestLine: (line: st
         onRequestLine(received, socket);
       }
     };
-    socket.setTimeout(IDLE_TIMEOUT_MS, () => socket.destroy());
+    const deadline = setTimeout(() => socket.destroy(), REQUEST_TIMEOUT_MS);
+    socket.on("close", () => clearTimeout(deadline));
     socket.on("data", (chunk) => {
+      if (handled) {
+        return;
+      }
       received += chunk.toString("latin1");
       const newline = received.indexOf("\n");
       if (newline >= 0) {
         received = received.slice(0, newline + 1);
+        handle();
+      } else if (received.length > MAX_REQUEST_LINE) {
         handle();
       }
     });

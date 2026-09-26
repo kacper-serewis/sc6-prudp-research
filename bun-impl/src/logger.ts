@@ -172,5 +172,11 @@ function rotateLogFiles(path: string) {
   }
 }
 
+/** Hex dump for logs, truncated so that large (or malicious) payloads can't flood the log. */
+export function hexPreview(data: Uint8Array, maxBytes = 256) {
+  const hex = Buffer.from(data.subarray(0, maxBytes)).toString("hex");
+  return data.length > maxBytes ? `${hex}... (${data.length} bytes)` : hex;
+}
+
 /** A logger without output, e.g. for tests. */
 export const silentLogger = new Logger([]);

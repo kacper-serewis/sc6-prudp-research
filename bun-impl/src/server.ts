@@ -18,6 +18,12 @@ function handleUserPacket(logger: Logger, packet: QPacket, from: SocketAddress, 
     logger.warn(`unexpected user packet ${packet}`);
     return;
   }
+  // Echoing a decompressed payload would turn the server into a traffic amplifier for spoofed
+  // requests. The game's NAT probes are small and uncompressed.
+  if (packet.useCompression) {
+    logger.warn(`ignoring compressed user packet ${packet}`);
+    return;
+  }
   const address = Buffer.from(`udp:/address=${from.host};port=${from.port}\0`);
   server.sendRaw(Buffer.concat([packet.payload, address]), from);
 }

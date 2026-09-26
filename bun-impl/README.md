@@ -138,6 +138,11 @@ Deliberate changes, all covered by tests:
   ignored instead.
 - Idle clients are expired on a timer. The Rust server only checks when the socket has been idle for
   a second, and never expires half-open (SYN-only) connections.
+- Limits against malicious clients: payloads may inflate to at most 64 KiB, a client may buffer at
+  most 1 MiB of fragments, HTTP request lines are capped at 8 KiB with a 10 s deadline, compressed
+  USER packets aren't echoed (the NAT echo would amplify them), and logged hex dumps are truncated.
+- Password hashing runs on Bun's worker threads and derived ticket keys are cached, so logins don't
+  block the other services, which share one event loop here.
 - Services without a `ticket_key` share one generated key, so tickets from the authentication service
   still work on the secure service.
 - The `tracking = "true"` service setting replaces the `tracking` cargo feature.

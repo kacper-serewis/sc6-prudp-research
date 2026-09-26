@@ -16,7 +16,7 @@ import { UbiAccountManagementProtocol } from "../src/protocols/ubi-account-manag
 import { UserStorageProtocol } from "../src/protocols/user-storage/user-storage-protocol";
 import { InitiateProbeRequest } from "../src/protocols/nat-traversal/nat-traversal-protocol";
 import { decode, encode, list, string, struct, u32 } from "../src/quazal/codec";
-import { PacketFlag } from "../src/quazal/prudp/packet";
+import { PacketFlag, PacketType, QPacket, StreamType } from "../src/quazal/prudp/packet";
 import { parseRmcPacket } from "../src/quazal/rmc/message";
 import { StationURL } from "../src/quazal/types";
 import { NewsItem } from "../src/services/overlord";
@@ -319,6 +319,20 @@ describe("secure service", () => {
     const echo = await c.receiveRaw();
     const payload = packet.subarray(10, packet.length - 1);
     expect(echo).toEqual(Buffer.concat([payload, Buffer.from(`udp:/address=127.0.0.1;port=${c.localAddress.port}\0`)]));
+  });
+
+  test("compressed USER packets are not echoed (no traffic amplification)", async () => {
+    const c = await client("secure");
+    c.sendPacket(
+      new QPacket({
+        source: { port: 1, streamType: StreamType.RVSec },
+        destination: { port: 1, streamType: StreamType.RVSec },
+        packetType: PacketType.User,
+        payload: Buffer.alloc(60_000),
+        useCompression: true,
+      }),
+    );
+    await expect(c.receiveRaw(300)).rejects.toThrow("timed out");
   });
 
   test("ping keeps the session alive and disconnect cleans it up", async () => {

@@ -52,6 +52,18 @@ describe("Storage", () => {
     expect(isUniqueViolation(error)).toBe(true);
   });
 
+  test("async login and registration verify on worker threads", async () => {
+    const storage = open();
+    await storage.registerUserAsync("async", "pw", "ASYNC");
+    const id = storage.findUserIdByName("async")!;
+    expect(await storage.loginUserAsync("async", "pw")).toEqual({ ok: true, userId: id });
+    expect(await storage.loginUserAsync("async", "nope")).toEqual({ ok: false, error: "InvalidPassword" });
+    expect(await storage.loginUserAsync("sam_the_fisher", "password1234")).toEqual({ ok: true, userId: 1002 });
+    expect(await storage.loginUserAsync("Tracking", "JaDe!")).toEqual({ ok: true, userId: 105 });
+    expect(await storage.loginUserAsync("ghost", "x")).toEqual({ ok: false, error: "NotFound" });
+    expect(storage.loginUser("async", "pw")).toEqual({ ok: true, userId: id });
+  });
+
   test("manages game sessions, participants and station urls", () => {
     const storage = open();
     storage.invalidateSessions();

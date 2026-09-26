@@ -42,6 +42,15 @@ describe("HTTP services", () => {
     );
   });
 
+  test("request lines are not buffered without limit", async () => {
+    const config = await serveContent(testLogger, { host: "127.0.0.1", port: 0 }, "content");
+    const files = await serveFiles(testLogger, { host: "127.0.0.1", port: 0 }, new Map());
+    servers.push(config, files);
+    const endless = `GET /${"a".repeat(20_000)}`; // no line break
+    expect(await rawHttp(addressOf(config), endless)).toStartWith("HTTP/1.0 200 OK");
+    expect(await rawHttp(addressOf(files), endless)).toBe("HTTP/1.0 400 Bad Request\r\n\r\n");
+  });
+
   test("the content service serves configured files", async () => {
     const dir = mkdtempSync(join(tmpdir(), "sc6-content-"));
     writeFileSync(join(dir, "mp.ini"), "[Section]\nKey=1\n");

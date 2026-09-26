@@ -43,6 +43,10 @@ describe("config", () => {
     );
   });
 
+  test("ignores a UTF-8 byte order mark, like the Rust server", () => {
+    expect(parseConfig(`\uFEFF${rustDefault}`).services).toHaveLength(4);
+  });
+
   test("the generated default is equivalent to the Rust default", () => {
     const ours = parseConfig(defaultConfigToml());
     const theirs = parseConfig(rustDefault);

@@ -48,14 +48,30 @@ export interface KerberosTicket {
   internal: KerberosTicketInternal;
 }
 
+/**
+ * Derived keys by iteration count and password. For the default password there are only 1024
+ * different keys, so after warming up logins don't spend ~10 ms on MD5 anymore.
+ */
+const derivedKeys = new Map<string, Buffer>();
+const MAX_DERIVED_KEYS = 4096;
+
 /** MD5 applied `65000 + peerPid % 1024` times to the password. */
 export function deriveKey(peerPid: number, password?: string | null) {
   const count = 65000 + (peerPid % 1024);
-  let key: Buffer = Buffer.from(password ?? DEFAULT_PASSWORD);
-  for (let i = 0; i < count; i++) {
-    key = hash("md5", key, "buffer") as Buffer;
+  const secret = password ?? DEFAULT_PASSWORD;
+  const cacheKey = `${count}:${secret}`;
+  let key = derivedKeys.get(cacheKey);
+  if (!key) {
+    key = Buffer.from(secret);
+    for (let i = 0; i < count; i++) {
+      key = hash("md5", key, "buffer") as Buffer;
+    }
+    if (derivedKeys.size >= MAX_DERIVED_KEYS) {
+      derivedKeys.delete(derivedKeys.keys().next().value!);
+    }
+    derivedKeys.set(cacheKey, key);
   }
-  return key;
+  return Buffer.from(key);
 }
 
 /** Serializes and encrypts a ticket for the client `peerPid`. */

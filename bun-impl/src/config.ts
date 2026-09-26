@@ -168,7 +168,8 @@ function parseService(name: string, table: Table, sharedTicketKey: () => Buffer)
 export function parseConfig(text: string): Config {
   let root: Table;
   try {
-    root = Bun.TOML.parse(text) as Table;
+    // Editors on Windows like to add a byte order mark, which the Rust server ignores as well.
+    root = Bun.TOML.parse(text.replace(/^\uFEFF/, "")) as Table;
   } catch (e) {
     throw new ConfigError(`invalid TOML: ${(e as Error).message}`);
   }
